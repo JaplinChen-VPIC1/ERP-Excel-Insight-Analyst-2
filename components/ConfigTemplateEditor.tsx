@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { AnalysisTemplate, Language } from '../types';
 import { translations } from '../i18n';
+import { BEST_PRACTICE_PROMPT_TEMPLATE } from '../services/configService';
+import { Wand2, Eraser } from 'lucide-react';
 
 interface ConfigTemplateEditorProps {
   template: Partial<AnalysisTemplate>;
@@ -32,6 +34,22 @@ const ConfigTemplateEditor: React.FC<ConfigTemplateEditorProps> = ({
       systemInstruction: template.systemInstruction || '',
       customPrompt: template.customPrompt || ''
     });
+  };
+
+  const handleLoadBestPractice = () => {
+      setTemplate(prev => ({
+          ...prev,
+          customPrompt: BEST_PRACTICE_PROMPT_TEMPLATE
+      }));
+  };
+
+  const handleClearPrompt = () => {
+      if (confirm('Are you sure you want to clear the prompt?')) {
+          setTemplate(prev => ({
+              ...prev,
+              customPrompt: ''
+          }));
+      }
   };
 
   return (
@@ -72,11 +90,31 @@ const ConfigTemplateEditor: React.FC<ConfigTemplateEditorProps> = ({
         </div>
 
         <div>
-          <label className="block text-sm font-bold text-gray-700 mb-1">{t.lblAnalysisPrompt}</label>
+          <div className="flex justify-between items-center mb-1">
+             <label className="block text-sm font-bold text-gray-700">{t.lblAnalysisPrompt}</label>
+             <div className="flex items-center gap-2">
+                 <button 
+                    onClick={handleLoadBestPractice}
+                    className="text-xs flex items-center gap-1 bg-purple-100 text-purple-700 px-2 py-1 rounded-md hover:bg-purple-200 transition-colors"
+                    title="Fill with structured guidance based on best practices"
+                 >
+                    <Wand2 className="w-3 h-3" />
+                    {t.loadTemplate}
+                 </button>
+                 <button 
+                    onClick={handleClearPrompt}
+                    className="text-xs flex items-center gap-1 bg-gray-100 text-gray-600 px-2 py-1 rounded-md hover:bg-gray-200 transition-colors"
+                    title="Clear content"
+                 >
+                    <Eraser className="w-3 h-3" />
+                    {t.clear}
+                 </button>
+             </div>
+          </div>
           <textarea 
             value={template.customPrompt || ''} 
             onChange={e => setTemplate({...template, customPrompt: e.target.value})}
-            className="w-full p-3 border border-gray-300 rounded-xl bg-white text-gray-900 font-mono text-sm focus:ring-2 focus:ring-purple-500 outline-none h-48 resize-y"
+            className="w-full p-3 border border-gray-300 rounded-xl bg-white text-gray-900 font-mono text-sm focus:ring-2 focus:ring-purple-500 outline-none h-[600px] resize-y"
             placeholder={`Write your specific analysis instructions here (Markdown supported).\nExample:\n- Focus on Q3 Sales\n- Highlight top 3 anomalies`}
           />
         </div>

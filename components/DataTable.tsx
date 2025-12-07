@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ExcelDataRow, Language } from '../types';
-import { ArrowUp, ArrowDown, ArrowUpDown, ChevronLeft, ChevronRight, Table as TableIcon, Check, ChevronDown, AlertCircle, Calendar, Filter, Plus, Trash2, X } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowUpDown, ChevronLeft, ChevronRight, Table as TableIcon, Check, ChevronDown, AlertCircle, Calendar, Filter, Plus, Trash2, X, AlertTriangle } from 'lucide-react';
 import { formatNumber, detectColumnType, parseDateSafe } from '../utils';
 import { translations } from '../i18n';
 
@@ -81,6 +81,45 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
     return types;
   }, [data, columns]);
 
+  // Performance Optimization: Cache key columns for visual validation
+  const keyColumns = useMemo(() => {
+    if (data.length === 0) return { orderKey: undefined, actualKey: undefined };
+    const headers = Object.keys(data[0]);
+    return {
+        // Exclude columns containing "Amount"/"Price"
+        orderKey: headers.find(k => 
+            (['單據', '訂單', '下單', '開工', 'Date', 'Order'].some(kw => k.includes(kw))) && 
+            !(['金額', '額', 'Price', 'Amount', 'Cost'].some(kw => k.includes(kw)))
+        ),
+        actualKey: headers.find(k => 
+            (['實際', '完工', '到貨', 'Actual', 'Finish', 'Arrival'].some(kw => k.includes(kw))) &&
+            !(['金額', '額', 'Price', 'Amount', 'Cost'].some(kw => k.includes(kw)))
+        )
+    };
+  }, [data]);
+
+  // Optimization: Pre-calculate column categories for styling
+  const colCategories = useMemo(() => {
+      const critical = new Set<string>();
+      const financial = new Set<string>();
+      const predicted = new Set<string>();
+
+      columns.forEach(col => {
+          const lower = col.toLowerCase();
+          if (['stock', 'qty', 'rate', '庫存', '數量', '完成率', '達成率'].some(k => lower.includes(k))) {
+              critical.add(col);
+          }
+          if (['金額', 'price', 'amount', 'cost', '成本'].some(k => lower.includes(k))) {
+              financial.add(col);
+          }
+          // Relaxed matching for Predicted Delivery: '預計' OR 'Delivery' (No 'Day' required)
+          if (['預計', '預交', 'planned', 'target', 'delivery'].some(k => lower.includes(k))) {
+              predicted.add(col);
+          }
+      });
+      return { critical, financial, predicted };
+  }, [columns]);
+
   // --- Filtering Logic ---
   const filteredData = useMemo(() => {
     let res = data;
@@ -94,7 +133,6 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
                 const valStr = String(rowValue).toLowerCase();
                 const filterVal = f.value.toLowerCase();
 
-                // Number comparison
                 if (colType === 'number') {
                     const numRow = Number(rowValue);
                     const numFilter = Number(f.value);
@@ -110,7 +148,6 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
                     }
                 }
                 
-                // Date comparison
                 if (colType === 'date') {
                     const dateRow = parseDateSafe(String(rowValue));
                     if (f.operator === 'between' && f.secondValue) {
@@ -187,7 +224,6 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
   };
 
 
-  // Sorting using Filtered Data
   const sortedData = useMemo(() => {
     if (!sortConfig.key || !sortConfig.direction) return filteredData;
     const colType = columnTypes[sortConfig.key];
@@ -212,7 +248,6 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
     });
   }, [filteredData, sortConfig, columnTypes]);
 
-  // Pagination
   const totalPages = Math.ceil(sortedData.length / itemsPerPage);
   
   useEffect(() => {
@@ -268,9 +303,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
     if (val === null || val === undefined) return '-';
     const strVal = String(val).trim();
 
-    // Priority: Explicit "Date" or "日期" column names
     if (colName.toLowerCase().includes('date') || colName.includes('日期')) {
-        // YYYYMMDD -> YYYY/MM/DD
         if (/^\d{8}$/.test(strVal)) {
           return `${strVal.substring(0,4)}/${strVal.substring(4,6)}/${strVal.substring(6,8)}`;
         }
@@ -278,13 +311,11 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
 
     if (type === 'number') return formatNumber(val);
     
-    // YYYYMM -> YYYY/MM (Generic check)
     if (/^(19|20)\d{2}(0[1-9]|1[0-2])$/.test(strVal)) {
        return `${strVal.substring(0,4)}/${strVal.substring(4,6)}`;
     }
 
     if (type === 'date') {
-       // YYYYMMDD -> YYYY/MM/DD
        if (/^\d{8}$/.test(strVal)) {
          return `${strVal.substring(0,4)}/${strVal.substring(4,6)}/${strVal.substring(6,8)}`;
        }
@@ -309,14 +340,23 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
     setColumnWidths(prev => ({ ...prev, [col]: newWidth }));
   };
 
-  const getCellStyle = (val: any, type: string) => {
-    if (val === null || val === undefined) return 'bg-yellow-50 text-gray-400 italic';
+  // --- OPTIMIZED VISUAL VALIDATION LOGIC ---
+  const getCellStatus = (val: any, type: string, row: ExcelDataRow, colName: string): { classes: string, icon?: React.ReactNode } => {
+    if (val === null || val === undefined) return { classes: 'bg-yellow-50 text-gray-400 italic' };
     
     if (type === 'number') {
         const num = Number(val);
-        if (num < 0) return 'text-red-600 font-bold bg-red-50';
-        // Zero amount logic
-        if (num === 0) return 'text-gray-400 italic';
+        if (num < 0) return { classes: 'text-red-600 font-bold bg-red-50', icon: <AlertTriangle className="w-3 h-3 mr-1 inline" /> };
+        
+        // Zero value logic (Qty/Stock = Red, Price/Amount = Gray)
+        if (num === 0) {
+            if (colCategories.critical.has(colName)) {
+                return { classes: 'text-red-600 font-bold bg-red-50/50', icon: <AlertCircle className="w-3 h-3 mr-1 inline" /> };
+            }
+            if (colCategories.financial.has(colName)) {
+                return { classes: 'text-gray-400 italic' };
+            }
+        }
     }
 
     if (type === 'date') {
@@ -324,13 +364,34 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
         const now = Date.now();
         const diff = d - now;
         // Future > 30 days
-        if (diff > 30 * 24 * 60 * 60 * 1000) return 'text-orange-600 font-medium';
+        if (diff > 30 * 24 * 60 * 60 * 1000) return { classes: 'text-orange-600 font-medium' };
+
+        // --- Cross Column Logic Checks ---
+        if (colCategories.predicted.has(colName)) {
+            const year = new Date(d).getFullYear();
+            
+            // 1. Check against Order Date
+            if (keyColumns.orderKey && row[keyColumns.orderKey]) {
+                const orderDate = parseDateSafe(String(row[keyColumns.orderKey]));
+                if (orderDate && year < new Date(orderDate).getFullYear()) {
+                    return { classes: 'text-red-600 font-bold bg-red-50 ring-1 ring-red-200', icon: <AlertTriangle className="w-3 h-3 mr-1 inline" /> }; // Logic Error
+                }
+            }
+
+            // 2. Check against Actual Date
+            // RELAXED RULE: Only flag if Predicted is > Actual Year + 1 (Allow cross-year early finish)
+            if (keyColumns.actualKey && row[keyColumns.actualKey]) {
+                const actualDate = parseDateSafe(String(row[keyColumns.actualKey]));
+                if (actualDate && year > new Date(actualDate).getFullYear() + 1) {
+                     return { classes: 'text-red-600 font-bold bg-red-50 ring-1 ring-red-200', icon: <AlertTriangle className="w-3 h-3 mr-1 inline" /> }; // Anomaly
+                }
+            }
+        }
     }
-    return '';
+    return { classes: '' };
   };
 
   const renderValueInput = () => {
-    // 1. Disabled (No column selected)
     if (!newFilterCol) {
         return <input disabled className="w-full px-3 py-2 bg-gray-100 border rounded-lg text-sm cursor-not-allowed" placeholder={t.selectColumn} />;
     }
@@ -339,10 +400,9 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
     const uniqueVals = getUniqueValues(newFilterCol);
     const isLowCardinality = uniqueVals.length > 0 && uniqueVals.length < 50;
     
-    // Shared classes: White background, Dark text, Border, Rounded
+    // FORCE WHITE BACKGROUND
     const inputClass = "w-full px-3 py-2 border rounded-lg text-sm bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none transition-all";
 
-    // 2. Date Range
     if (type === 'date' && newFilterOp === 'between') {
        return (
          <div className="flex gap-2">
@@ -353,12 +413,10 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
        );
     }
     
-    // 3. Single Date
     if (type === 'date') {
         return <input type="date" value={newFilterVal} onChange={e => setNewFilterVal(e.target.value)} className={inputClass} />;
     }
     
-    // 4. Dropdown (Low Cardinality)
     if (isLowCardinality) {
        return (
          <select value={newFilterVal} onChange={e => setNewFilterVal(e.target.value)} className={inputClass}>
@@ -368,12 +426,10 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
        );
     }
 
-    // 5. Number
     if (type === 'number') {
         return <input type="number" value={newFilterVal} onChange={e => setNewFilterVal(e.target.value)} placeholder={t.inputNumber} className={inputClass} />;
     }
 
-    // 6. Text (Default)
     return <input type="text" value={newFilterVal} onChange={e => setNewFilterVal(e.target.value)} placeholder={t.inputKeyword} className={inputClass} />;
   };
 
@@ -386,7 +442,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        {/* Header Area */}
+        {/* Header */}
         <div className="p-4 border-b border-gray-200 flex flex-wrap justify-between items-center gap-4 bg-gray-50/50">
            <div className="flex items-center gap-2">
              <div className="bg-blue-100 p-1.5 rounded-lg">
@@ -398,7 +454,6 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
            </div>
            
            <div className="flex items-center gap-3">
-              {/* Filter Toggle */}
               <button 
                 onClick={() => setIsFilterOpen(!isFilterOpen)} 
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors border ${isFilterOpen || filters.length > 0 ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
@@ -434,7 +489,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
            </div>
         </div>
 
-        {/* Filter Panel (Embedded) */}
+        {/* Filter Panel */}
         {(isFilterOpen || filters.length > 0) && (
             <div className="p-4 bg-blue-50/50 border-b border-blue-100 animate-slide-in">
                 <div className="flex flex-col md:flex-row gap-3 items-start md:items-end">
@@ -496,7 +551,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
         )}
 
         <div className="overflow-x-auto relative min-h-[300px]">
-            <table className="w-full text-sm text-left">
+            <table className="w-full text-sm text-left border-collapse">
               <thead className={`text-xs uppercase ${activeTheme.headerBg} ${activeTheme.headerText}`}>
                 <tr>
                   {columns.map((col) => {
@@ -516,7 +571,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
                         <div
                            onMouseDown={(e) => handleResizeStart(e, col)}
                            onDoubleClick={() => handleAutoFit(col)}
-                           className="absolute top-0 right-0 h-full w-2 cursor-col-resize hover:bg-white/30 z-10 transition-colors"
+                           className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-blue-400 z-10 transition-colors"
                            title={t.autoFit}
                         />
                       </th>
@@ -536,11 +591,18 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
                   >
                     {columns.map((col) => {
                        const type = columnTypes[col];
-                       const alignClass = type === 'number' ? 'text-right font-mono' : type === 'date' ? 'text-center' : 'text-left';
-                       const anomalyClass = getCellStyle(row[col], type);
+                       const status = getCellStatus(row[col], type, row, col);
+                       
+                       let justifyContent = 'justify-start';
+                       if (type === 'number') justifyContent = 'justify-end';
+                       if (type === 'date') justifyContent = 'justify-center';
+
                        return (
-                        <td key={`${rowIndex}-${col}`} className={`px-4 py-3 whitespace-nowrap text-gray-700 ${alignClass} ${anomalyClass} ${activeTheme.divider ? `border-r ${activeTheme.divider} last:border-r-0` : ''}`}>
-                          {formatCellValue(row[col], type, col)}
+                        <td key={`${rowIndex}-${col}`} className={`px-4 py-2 whitespace-nowrap text-gray-700 ${status.classes} ${activeTheme.divider ? `border-r ${activeTheme.divider} last:border-r-0` : ''}`}>
+                          <div className={`flex items-center gap-1 ${justifyContent} ${type === 'number' ? 'font-mono' : ''}`}>
+                             {status.icon}
+                             {formatCellValue(row[col], type, col)}
+                          </div>
                         </td>
                        );
                     })}
@@ -550,7 +612,7 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
             </table>
         </div>
         
-        {/* Footer Pagination */}
+        {/* Footer */}
         <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-between items-center">
              <div className="text-xs text-gray-500 font-medium">
                 Page {currentPage} of {totalPages || 1}

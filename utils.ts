@@ -6,70 +6,21 @@ import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import PptxGenJS from 'pptxgenjs';
 
-// Simple color palette for charts
 export const CHART_COLORS = [
-  '#3b82f6', // blue-500
-  '#ef4444', // red-500
-  '#10b981', // emerald-500
-  '#f59e0b', // amber-500
-  '#8b5cf6', // violet-500
-  '#ec4899', // pink-500
-  '#06b6d4', // cyan-500
+  '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'
 ];
 
 export const PALETTES = {
   default: CHART_COLORS,
-  pastel: [
-    '#93c5fd', // blue-300
-    '#fca5a5', // red-300
-    '#6ee7b7', // emerald-300
-    '#fcd34d', // amber-300
-    '#c4b5fd', // violet-300
-    '#f9a8d4', // pink-300
-    '#67e8f9', // cyan-300
-  ],
-  vibrant: [
-    '#2563eb', // blue-600
-    '#dc2626', // red-600
-    '#059669', // emerald-600
-    '#d97706', // amber-600
-    '#7c3aed', // violet-600
-    '#db2777', // pink-600
-    '#0891b2', // cyan-600
-  ],
-  ocean: [
-    '#0c4a6e', // sky-900
-    '#0369a1', // sky-700
-    '#0284c7', // sky-600
-    '#38bdf8', // sky-400
-    '#7dd3fc', // sky-300
-    '#bae6fd', // sky-200
-    '#e0f2fe', // sky-100
-  ],
-  warm: [
-    '#78350f', // amber-900
-    '#b45309', // amber-700
-    '#d97706', // amber-600
-    '#fbbf24', // amber-400
-    '#fcd34d', // amber-300
-    '#fde68a', // amber-200
-    '#fffbeb', // amber-50
-  ],
-  neon: [
-    '#facc15', // yellow-400
-    '#a3e635', // lime-400
-    '#22d3ee', // cyan-400
-    '#e879f9', // fuchsia-400
-    '#f472b6', // pink-400
-    '#818cf8', // indigo-400
-    '#fb923c', // orange-400
-  ]
+  pastel: ['#93c5fd', '#fca5a5', '#6ee7b7', '#fcd34d', '#c4b5fd', '#f9a8d4', '#67e8f9'],
+  vibrant: ['#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed', '#db2777', '#0891b2'],
+  ocean: ['#0c4a6e', '#0369a1', '#0284c7', '#38bdf8', '#7dd3fc', '#bae6fd', '#e0f2fe'],
+  warm: ['#78350f', '#b45309', '#d97706', '#fbbf24', '#fcd34d', '#fde68a', '#fffbeb'],
+  neon: ['#facc15', '#a3e635', '#22d3ee', '#e879f9', '#f472b6', '#818cf8', '#fb923c']
 };
 
-// Cached Regex for performance
 const DATE_REGEX_8DIGIT = /^\d{8}$/;
-const DATE_REGEX_6DIGIT = /^(19|20)\d{2}(0[1-9]|1[0-2])$/; // YYYYMM
-const DATE_SPLIT_REGEX = /[-/]/;
+const DATE_REGEX_6DIGIT = /^(19|20)\d{2}(0[1-9]|1[0-2])$/;
 
 export const detectColumnType = (data: ExcelDataRow[], column: string): 'date' | 'number' | 'string' => {
   const colLower = column.toLowerCase();
@@ -123,39 +74,45 @@ export const parseDateSafe = (value: string): number => {
     return new Date(strVal).getTime();
 };
 
-/**
- * Clean and Enrich Data - Hardcoded Robust Logic
- * Replaces dynamic rule engine with guaranteed fixers.
- */
 export const cleanAndEnrichData = (data: ExcelDataRow[]): ExcelDataRow[] => {
   if (!data || data.length === 0) return data;
 
-  // Identify Key Columns (Heuristics)
   const headers = Object.keys(data[0]);
   
-  const docDateCol = headers.find(h => ['單據日期', '訂單日期', '開工日', 'Date', 'Order Date'].some(k => h.includes(k)));
-  const predictedCol = headers.find(h => ['預計', '預交', 'Planned', 'Target', 'Delivery'].some(k => h.includes(k)) && (h.includes('日') || h.includes('Date')));
-  const actualCol = headers.find(h => ['實際', '完工日', 'Actual', 'Finish'].some(k => h.includes(k)));
+  // Pre-identify Date Columns to optimize performance
+  const dateCandidates = headers.filter(h => {
+      const lower = h.toLowerCase();
+      // Heuristic: Column name contains 'date' or Chinese '日' or 'time'
+      if (lower.includes('date') || lower.includes('日') || lower.includes('time')) return true;
+      // Fallback: Check sample data type
+      return detectColumnType(data.slice(0, 50), h) === 'date';
+  });
+
+  const docDateCol = headers.find(h => ['單據', '訂單', '下單', '開工', 'Date', 'Order'].some(k => h.includes(k)));
+  const predictedCol = headers.find(h => ['預計', '預交', 'Planned', 'Target', 'Delivery'].some(k => h.includes(k)));
+  const actualCol = headers.find(h => ['實際', '完工', '到貨', 'Actual', 'Finish', 'Arrival'].some(k => h.includes(k)));
   const diffCol = headers.find(h => ['差異', 'Diff'].some(k => h.includes(k)));
 
-  // Iterate and Mutate (Performance Optimized)
+  // Dynamic Current Year for robust fixing
+  const currentYear = new Date().getFullYear().toString();
+
   for (let i = 0; i < data.length; i++) {
     const row = data[i];
 
-    // 1. Universal Year Fix (0025 -> 2025)
-    // Check all date-like columns
-    for (const key of headers) {
-        let val = String(row[key] || '');
+    // 1. Year Fix (e.g. 0025 -> 2025, 0202 -> 2025)
+    for (const key of dateCandidates) {
+        if (!row[key]) continue;
+        let val = String(row[key]);
         if (!val) continue;
 
-        // Pattern: YYYY... where Y < 2000
         let year = 0;
         let isDate = false;
 
+        // Detect Year
         if (val.length === 8 && /^\d{8}$/.test(val)) {
             year = parseInt(val.substring(0, 4));
             isDate = true;
-        } else if (val.includes('/') || val.includes('-')) {
+        } else if (val.indexOf('/') > -1 || val.indexOf('-') > -1) {
             const parts = val.split(/[-/]/);
             if (parts.length >= 3) {
                 year = parseInt(parts[0]);
@@ -163,18 +120,21 @@ export const cleanAndEnrichData = (data: ExcelDataRow[]): ExcelDataRow[] => {
             }
         }
 
+        // Fix Logic: If Year is absurdly small (< 2000)
         if (isDate && year > 0 && year < 2000) {
-            // Fix Year Logic
-            // If reference doc date exists, use its year. Otherwise use 2025 (current era).
-            let correctYear = '2025';
+            let correctYear = currentYear; // Default fallback
+            
+            // Try to find a reference year from Document Date
             if (docDateCol && row[docDateCol]) {
                 const docVal = String(row[docDateCol]);
-                if (docVal.length === 8) correctYear = docVal.substring(0, 4);
-                else if (docVal.includes('/')) correctYear = docVal.split('/')[0];
-                else if (docVal.includes('-')) correctYear = docVal.split('-')[0];
+                let docY = 0;
+                if (docVal.length === 8) docY = parseInt(docVal.substring(0, 4));
+                else if (docVal.indexOf('/') > -1) docY = parseInt(docVal.split('/')[0]);
+                
+                if (docY > 2000) correctYear = docY.toString();
             }
 
-            // Apply fix
+            // Apply Fix
             if (val.length === 8) {
                 row[key] = correctYear + val.substring(4);
             } else {
@@ -186,23 +146,22 @@ export const cleanAndEnrichData = (data: ExcelDataRow[]): ExcelDataRow[] => {
     }
 
     // 2. Logic Fix: Predicted Date < Document Date
+    // Scenario: User typed 2023 but meant 2024, or typo'd year
     if (docDateCol && predictedCol && row[docDateCol] && row[predictedCol]) {
-        const d1 = parseDateSafe(String(row[docDateCol]));
-        const d2 = parseDateSafe(String(row[predictedCol]));
+        const d1 = parseDateSafe(String(row[docDateCol])); // Doc Date
+        const d2 = parseDateSafe(String(row[predictedCol])); // Predicted Date
         
-        // If Predicted is significantly earlier than Doc (e.g. > 180 days earlier, or just earlier depending on strictness)
-        // Usually Predicted should be >= Doc.
-        if (d2 < d1) {
-             // Assume Year Typo in Predicted
-             // Extract Doc Year
+        // If Predicted is EARLIER than Doc Date (Logic Error)
+        if (d2 < d1 && d1 > 0 && d2 > 0) {
              const docVal = String(row[docDateCol]);
-             let docYear = '2025';
+             let docYear = currentYear;
              if (docVal.length === 8) docYear = docVal.substring(0, 4);
              else docYear = docVal.split(/[-/]/)[0];
 
-             // Apply to Predicted
              const predVal = String(row[predictedCol]);
              let fixedPred = predVal;
+             
+             // Replace Predicted Year with Doc Year
              if (predVal.length === 8) fixedPred = docYear + predVal.substring(4);
              else {
                  const parts = predVal.split(/[-/]/);
@@ -213,7 +172,7 @@ export const cleanAndEnrichData = (data: ExcelDataRow[]): ExcelDataRow[] => {
         }
     }
 
-    // 3. Recalculate Diff Days (if Logic Fixed or Year Fixed)
+    // 3. Recalculate Diff Days (if column exists)
     if (predictedCol && actualCol && diffCol && row[predictedCol] && row[actualCol]) {
         const dPred = parseDateSafe(String(row[predictedCol]));
         const dAct = parseDateSafe(String(row[actualCol]));
@@ -255,6 +214,7 @@ export const getDatasetStats = (data: ExcelDataRow[]): DatasetStats => {
     });
 
     for (const row of data) {
+        // Date Stats
         if (dateCol) {
             const ts = parseDateSafe(String(row[dateCol]));
             if (ts > 0) {
@@ -262,6 +222,7 @@ export const getDatasetStats = (data: ExcelDataRow[]): DatasetStats => {
                 if (ts > maxDate) maxDate = ts;
             }
         }
+        // Numeric Stats
         for (const col of numericCols) {
             const val = parseFloat(String(row[col]));
             if (!isNaN(val)) {
@@ -279,11 +240,13 @@ export const getDatasetStats = (data: ExcelDataRow[]): DatasetStats => {
         stats.dateRange.end = new Date(maxDate).toLocaleDateString();
     }
 
+    // Finalize Averages and Rounding
     numericCols.forEach(col => {
         const s = stats.numericStats[col];
         if (s.min === Infinity) s.min = 0;
         if (s.max === -Infinity) s.max = 0;
         s.avg = s.sum / data.length;
+        // Round to 2 decimal places for cleanliness
         s.sum = Math.round(s.sum * 100) / 100;
         s.avg = Math.round(s.avg * 100) / 100;
     });
@@ -293,12 +256,18 @@ export const getDatasetStats = (data: ExcelDataRow[]): DatasetStats => {
 
 export const getSmartSample = (data: ExcelDataRow[], limit: number = 150): ExcelDataRow[] => {
     if (data.length <= limit) return data;
+    
+    // Strategy: 
+    // 20% Head (Recent/First records)
+    // 20% Tail (Oldest/Last records)
+    // 60% Random distribution (To catch outliers in the middle)
     const headCount = Math.floor(limit * 0.2); 
     const tailCount = Math.floor(limit * 0.2); 
     const randomCount = limit - headCount - tailCount; 
 
     const head = data.slice(0, headCount);
     const tail = data.slice(data.length - tailCount);
+    
     const middleStart = headCount;
     const middleEnd = data.length - tailCount;
     const randomSamples: ExcelDataRow[] = [];
@@ -309,6 +278,7 @@ export const getSmartSample = (data: ExcelDataRow[], limit: number = 150): Excel
             randomSamples.push(data[ridx]);
         }
     }
+    
     return [...head, ...randomSamples, ...tail];
 };
 

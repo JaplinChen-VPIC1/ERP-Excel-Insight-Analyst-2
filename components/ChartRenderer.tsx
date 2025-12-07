@@ -164,8 +164,9 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
   // Custom Tooltip Component
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
+      const primaryColor = payload[0].color || colors[0];
       return (
-        <div className="bg-white/95 backdrop-blur-sm p-3 border border-gray-100 shadow-xl rounded-xl text-sm min-w-[150px]">
+        <div className="bg-white/95 backdrop-blur-sm p-3 border border-gray-100 shadow-xl rounded-xl text-sm min-w-[150px]" style={{ borderLeft: `4px solid ${primaryColor}` }}>
           <p className="font-bold text-gray-800 mb-2 border-b border-gray-100 pb-1">{label}</p>
           {payload.map((entry: any, i: number) => {
             // Determine Label
@@ -299,12 +300,18 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
             <XAxis {...XAxisProps} />
             <YAxis {...YAxisProps} />
             <Tooltip content={<CustomTooltip />} cursor={{fill: '#f8fafc', opacity: 0.5}} />
-            <Bar dataKey={config.dataKey} name={config.dataKey} radius={[6, 6, 0, 0]} maxBarSize={60}>
+            <Bar 
+                dataKey={config.dataKey} 
+                name={config.dataKey} 
+                radius={[6, 6, 0, 0]} 
+                maxBarSize={60}
+            >
               {chartData.map((entry, index) => (
                 <Cell 
                   key={`cell-${index}`} 
                   fill={colors[index % colors.length]} 
                   cursor={onDataClick ? 'pointer' : 'default'} 
+                  className="hover:opacity-80 transition-opacity"
                 />
               ))}
               {showLabels && <LabelList dataKey={config.dataKey} {...LabelProps} />}
@@ -442,7 +449,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
           <div className="flex-1 pr-4 min-w-0">
             <h3 className="font-bold text-gray-800 text-lg leading-tight mb-1 truncate" title={config.title}>{config.title}</h3>
             {/* Improved Description Area: Scrollable, no truncation */}
-            <div className="max-h-24 overflow-y-auto pr-2 custom-scrollbar">
+            <div className="max-h-24 overflow-y-auto pr-2 custom-scrollbar break-words">
                 <p className="text-sm text-gray-500 leading-relaxed">
                 {config.description}
                 </p>

@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageCircle, X, Send, Bot, Loader2, Sparkles, Paperclip, Grip, Search, ArrowLeft } from 'lucide-react';
-import { ChatMessage, ExcelDataRow, AnalysisResult, Language, ChatAttachment } from '../types';
+import { ChatMessage, ExcelDataRow, AnalysisResult, Language, ChatAttachment, AnalysisTemplate } from '../types';
 import { analyzeDataWithGemini } from '../services/geminiService';
 import { translations } from '../i18n';
 
@@ -9,9 +9,10 @@ interface ChatBotProps {
   data: ExcelDataRow[];
   onAnalysisUpdate: (result: AnalysisResult) => void;
   language: Language;
+  templates?: AnalysisTemplate[];
 }
 
-const ChatBot: React.FC<ChatBotProps> = ({ data, onAnalysisUpdate, language }) => {
+const ChatBot: React.FC<ChatBotProps> = ({ data, onAnalysisUpdate, language, templates }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -248,7 +249,8 @@ const ChatBot: React.FC<ChatBotProps> = ({ data, onAnalysisUpdate, language }) =
         language, 
         userMsg.content,
         userMsg.attachment, 
-        [...messages, userMsg]
+        [...messages, userMsg],
+        templates // Pass the active templates here
       );
       
       onAnalysisUpdate(newAnalysis);

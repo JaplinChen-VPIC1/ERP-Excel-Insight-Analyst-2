@@ -11,8 +11,8 @@ import Dashboard from './components/Dashboard';
 import ChatBot from './components/ChatBot';
 import ConfigManager from './components/ConfigManager';
 import FileStaging from './components/FileStaging';
-import { Bot, AlertCircle, Globe, Settings, Database, AlertTriangle, Loader2 } from 'lucide-react';
-import { translations } from './i18n';
+import { Bot, AlertCircle, Globe, Settings, Database, AlertTriangle } from 'lucide-react';
+import { translations } from '../i18n';
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.IDLE);
@@ -100,32 +100,56 @@ const App: React.FC = () => {
     return undefined;
   };
 
+  // Optimized Language Switch Effect with Race Condition Protection
   useEffect(() => {
+    let isAborted = false; // Flag to track if the effect has been cleaned up
+
     const updateAnalysisForLanguage = async () => {
       if (appState === AppState.SUCCESS && data.length > 0) {
         setIsRefreshing(true);
         try {
           const activeTemplates = getActiveTemplates();
-          const newAnalysis = await analyzeDataWithGemini(data, language, undefined, undefined, undefined, activeTemplates);
-          setAnalysis(newAnalysis);
-          setLastUpdated(Date.now());
+          const newAnalysis = await analyzeDataWithGemini(
+            data, 
+            language, 
+            undefined, 
+            undefined, 
+            undefined, 
+            activeTemplates
+          );
+          
+          // Only update state if this request hasn't been superseded
+          if (!isAborted) {
+            setAnalysis(newAnalysis);
+            setLastUpdated(Date.now());
+          }
         } catch (error) {
-          console.error("Language update failed:", error);
+          if (!isAborted) {
+            console.error("Language update failed:", error);
+          }
         } finally {
-          setIsRefreshing(false);
+          if (!isAborted) {
+            setIsRefreshing(false);
+          }
         }
       }
     };
+
     updateAnalysisForLanguage();
+
+    // Cleanup function: runs when language changes again or component unmounts
+    return () => {
+      isAborted = true;
+    };
   }, [language]); 
 
   const handleFilesDropped = (files: File[]) => {
       setStagedFiles(files);
       // Auto-select logic
-      if (files.length === 1 && availableTemplates.length > 0) {
-          setSelectedContextId(availableTemplates[0].id);
-      } else if (files.length > 1 && availableGroups.length > 0) {
-          setSelectedContextId(availableGroups[0].id);
+      if (files.length === 1 && configService.getTemplates().length > 0) {
+          setSelectedContextId(configService.getTemplates()[0].id);
+      } else if (files.length > 1 && configService.getGroups().length > 0) {
+          setSelectedContextId(configService.getGroups()[0].id);
       } else {
           setSelectedContextId('');
       }
@@ -240,9 +264,9 @@ const App: React.FC = () => {
             </button>
 
             <div className="relative group">
-              <button className="flex items-center gap-2 text-sm text-gray-600 hover:text-blue-600 py-2">
+              <button className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-blue-600 py-2 px-2 rounded hover:bg-gray-50 transition-colors">
                 <Globe className="w-4 h-4" />
-                <span className="pt-2">
+                <span className="pt-[1px]">
                   {language === 'zh-TW' && '繁體中文'}
                   {language === 'en-US' && 'English'}
                   {language === 'vi-VN' && 'Tiếng Việt'}
@@ -301,18 +325,19 @@ const App: React.FC = () => {
             )}
 
             {(appState === AppState.PARSING || appState === AppState.ANALYZING) && (
-              <div className="mt-8 w-full max-w-md space-y-3">
-                 <div className="flex items-center gap-3">
-                   <div className={`w-3 h-3 rounded-full ${appState === AppState.PARSING ? 'bg-blue-500 animate-pulse' : 'bg-green-500'}`} />
-                   <span className={appState === AppState.PARSING ? 'font-bold text-blue-700' : 'text-gray-500'}>
-                     {t.stepParsing}
-                   </span>
-                 </div>
-                 <div className="flex items-center gap-3">
-                   <div className={`w-3 h-3 rounded-full ${appState === AppState.ANALYZING ? 'bg-blue-500 animate-pulse' : 'bg-gray-300'}`} />
-                   <span className={appState === AppState.ANALYZING ? 'font-bold text-blue-700' : 'text-gray-500'}>
-                     {t.stepAnalyzing}
-                   </span>
+              <div className="mt-8 w-full max-w-md space-y-4">
+                 <div className="relative pt-1">
+                    <div className="flex mb-2 items-center justify-between">
+                        <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-blue-600 bg-blue-200">
+                            {appState === AppState.PARSING ? t.stepParsing : t.stepAnalyzing}
+                        </span>
+                        <span className="text-xs font-semibold inline-block text-blue-600">
+                            {appState === AppState.PARSING ? '30%' : '80%'}
+                        </span>
+                    </div>
+                    <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-blue-200">
+                        <div style={{ width: appState === AppState.PARSING ? '30%' : '80%' }} className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500 transition-all duration-1000 ease-out"></div>
+                    </div>
                  </div>
               </div>
             )}
@@ -335,6 +360,7 @@ const App: React.FC = () => {
               data={data} 
               onAnalysisUpdate={handleAnalysisUpdate} 
               language={language}
+              templates={getActiveTemplates()}
             />
           </>
         )}

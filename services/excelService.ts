@@ -84,9 +84,12 @@ export const parseExcelFile = async (file: File): Promise<ExcelDataRow[]> => {
         const finalSheet = workbook.Sheets[bestSheetName];
         
         // Convert to JSON using the detected header row from the best sheet
+        // OPTIMIZATION: raw: false + dateNF ensures dates are strings, not serial numbers
         const jsonData = XLSX.utils.sheet_to_json(finalSheet, { 
           range: bestHeaderIndex,
-          defval: null // Ensure empty cells are null, not undefined
+          defval: null,
+          raw: false, 
+          dateNF: 'yyyy/mm/dd' 
         }) as ExcelDataRow[];
         
         if (jsonData.length === 0) {
