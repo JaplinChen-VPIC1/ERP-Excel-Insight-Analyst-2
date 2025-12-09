@@ -23,7 +23,8 @@ const DATE_REGEX_8DIGIT = /^\d{8}$/;
 const DATE_REGEX_6DIGIT = /^(19|20)\d{2}(0[1-9]|1[0-2])$/;
 
 export const detectColumnType = (data: ExcelDataRow[], column: string): 'date' | 'number' | 'string' => {
-  const colLower = column.toLowerCase();
+  if (!column) return 'string';
+  const colLower = String(column).toLowerCase();
   const stringKeywords = ['id', 'no', 'code', '單號', '編號', '料號', '工號', '客代', '廠商', '品號', '規格'];
   if (stringKeywords.some(kw => colLower.includes(kw))) return 'string';
 
@@ -81,7 +82,8 @@ export const cleanAndEnrichData = (data: ExcelDataRow[]): ExcelDataRow[] => {
   
   // Pre-identify Date Columns to optimize performance
   const dateCandidates = headers.filter(h => {
-      const lower = h.toLowerCase();
+      if (!h) return false;
+      const lower = String(h).toLowerCase();
       // Heuristic: Column name contains 'date' or Chinese '日' or 'time'
       if (lower.includes('date') || lower.includes('日') || lower.includes('time')) return true;
       // Fallback: Check sample data type
@@ -297,9 +299,12 @@ export const formatCompactNumber = (value: number | string | null | undefined): 
 };
 
 export const aggregateData = (data: ExcelDataRow[], xAxisKey: string, dataKey: string): any[] => {
+  // Guard clauses
+  if (!data || !data.length || !xAxisKey || !dataKey) return [];
+
   const map = new Map<string, { sum: number; count: number }>();
   let mode: 'sum' | 'count' | 'average' = 'sum';
-  const keyLower = dataKey.toLowerCase();
+  const keyLower = String(dataKey).toLowerCase();
   
   if (keyLower.includes('rate') || keyLower.includes('percent') || keyLower.includes('avg') || keyLower.includes('yield') || keyLower.includes('率') || keyLower.includes('平均') || keyLower.includes('占比') || keyLower.includes('達成')) {
     mode = 'average';

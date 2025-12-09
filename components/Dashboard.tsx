@@ -3,8 +3,8 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AnalysisResult, ExcelDataRow, Language } from '../types';
 import ChartRenderer from './ChartRenderer';
 import DataTable from './DataTable';
-import { Sparkles, FileText, Download, Filter, Plus, X, Trash2, ChevronDown, FilterX, RefreshCw, Clock, AlertCircle, Calendar, Lightbulb, Loader2 } from 'lucide-react';
-import { exportToCSV, exportToJSON, exportToExcel, exportToPDF, exportToPPTX, detectColumnType, parseDateSafe } from '../utils';
+import { Sparkles, FileText, Download, FilterX, RefreshCw, Clock, AlertCircle, Lightbulb, Loader2, ChevronDown, Plus } from 'lucide-react';
+import { exportToCSV, exportToJSON, exportToExcel, exportToPDF, exportToPPTX } from '../utils';
 import { translations } from '../i18n';
 import { Responsive, WidthProvider } from 'react-grid-layout';
 
@@ -116,8 +116,69 @@ const Dashboard: React.FC<DashboardProps> = ({
     }, 100);
   };
 
+  // --- Smart Text Formatting Helper ---
+  const renderFormattedText = (text: string) => {
+    if (!text) return null;
+    
+    // 1. Force newline after Chinese period to create clear paragraphs
+    // Also handle Markdown bolding if AI returns it
+    const processedText = text.replace(/。/g, '。\n\n');
+
+    // Regex to detect numbers/percentages for highlighting
+    // Matches: 123, 1,234, 12.34, 88%, $100
+    const numberRegex = /(\d{1,3}(?:,\d{3})*(?:\.\d+)?%?)/g;
+
+    return processedText.split('\n').map((line, i) => {
+        const trimmed = line.trim();
+        if (!trimmed) return <div key={i} className="h-2" />; // Spacer
+
+        // 2. Detect List Items (- or • or 1.)
+        if (trimmed.startsWith('- ') || trimmed.startsWith('• ') || /^\d+\.\s/.test(trimmed)) {
+            // Remove the bullet char for cleaner rendering
+            const content = trimmed.replace(/^[-•]\s?/, '').replace(/^\d+\.\s?/, '');
+            return (
+                <div key={i} className="flex gap-3 pl-2 mb-2 items-start group">
+                    <span className="mt-2 w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 group-hover:scale-125 transition-transform" />
+                    <span className="text-gray-700 leading-relaxed text-sm md:text-base">
+                        {content.split(numberRegex).map((part, idx) => {
+                            if (numberRegex.test(part)) {
+                                return <strong key={idx} className="text-indigo-700 font-mono bg-indigo-50 px-1 rounded mx-0.5 text-sm">{part}</strong>;
+                            }
+                            if (part.includes('**')) {
+                                return <span key={idx} dangerouslySetInnerHTML={{ __html: part.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') }} />;
+                            }
+                            return part;
+                        })}
+                    </span>
+                </div>
+            );
+        }
+
+        // 3. Detect Headers (Short lines, no end punctuation)
+        if (trimmed.length < 60 && !trimmed.endsWith('.') && !trimmed.endsWith('。') && !trimmed.endsWith('：') && !trimmed.endsWith(':')) {
+             // Treat as a sub-header
+             return <h4 key={i} className="font-bold text-gray-800 mt-4 mb-2 text-lg border-l-4 border-blue-500 pl-3">{trimmed}</h4>
+        }
+
+        // 4. Regular Paragraph
+        return (
+            <p key={i} className="text-gray-700 leading-relaxed mb-3 text-justify text-sm md:text-base">
+                {line.split(numberRegex).map((part, idx) => {
+                    if (numberRegex.test(part) && part.length > 1) { 
+                        return <strong key={idx} className="text-blue-700 font-medium">{part}</strong>;
+                    }
+                    if (part.includes('**')) {
+                        return <span key={idx} dangerouslySetInnerHTML={{ __html: part.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>') }} />;
+                    }
+                    return part;
+                })}
+            </p>
+        );
+    });
+  };
+
   return (
-    <div className="flex flex-col gap-3 w-full animate-fade-in" id="dashboard-content">
+    <div className="flex flex-col gap-4 w-full animate-fade-in" id="dashboard-content">
       
       {/* 1. Toolbar / Report Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm w-full">
@@ -165,64 +226,78 @@ const Dashboard: React.FC<DashboardProps> = ({
          </div>
       </div>
 
-      {/* 2. AI Summary Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col md:flex-row">
-          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-6 md:w-1/3 text-white flex flex-col justify-center relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
-              <div className="relative z-10">
-                 <div className="flex items-center gap-2 mb-3">
-                    <Sparkles className="w-5 h-5 text-yellow-300" />
-                    <h3 className="text-lg font-bold tracking-wide uppercase opacity-90">{t.aiSummary}</h3>
-                 </div>
-                 <div className="w-12 h-1 bg-white/30 rounded-full mb-4"></div>
-                 <p className="text-blue-100 text-sm italic">{t.insightNote}</p>
+      {/* 2. Combined AI Summary & Insights Card (New Layout) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Executive Summary Column (1/3) */}
+          <div className="lg:col-span-1 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+              <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-6 py-4 flex items-center gap-3">
+                  <Sparkles className="w-5 h-5 text-yellow-300 animate-pulse" />
+                  <h3 className="text-lg font-bold text-white tracking-wide">{t.aiSummary}</h3>
+              </div>
+              <div className="p-6 bg-white min-h-[200px] flex-1">
+                  {isRefreshing ? (
+                    <div className="flex flex-col items-center justify-center h-full text-gray-400 gap-3">
+                        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                        <p className="italic">{t.updating}</p>
+                    </div>
+                  ) : (
+                    <div className="prose prose-blue max-w-none">
+                        {renderFormattedText(analysis.summary)}
+                    </div>
+                  )}
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                      <p className="text-xs text-gray-400 italic flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          {t.insightNote}
+                      </p>
+                  </div>
               </div>
           </div>
-          <div className="p-6 md:w-2/3 bg-white text-gray-700 text-base leading-relaxed space-y-4">
-              {isRefreshing ? (
-                <div className="flex items-center gap-2 text-gray-400 italic"><Loader2 className="w-4 h-4 animate-spin" />{t.updating}</div>
-              ) : (
-                analysis.summary.split('\n').map((para, i) => <p key={i} className="text-justify">{para}</p>)
-              )}
+
+          {/* Key Insights Column (2/3) */}
+          <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-full">
+             <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50 flex items-center gap-2">
+                <Lightbulb className="w-5 h-5 text-amber-500" />
+                <h3 className="text-lg font-bold text-gray-800">{t.sheetInsights}</h3>
+             </div>
+             <div className="p-5 space-y-3 flex-1 overflow-y-auto max-h-[600px] custom-scrollbar">
+               {analysis.keyInsights.map((insight, idx) => {
+                  const parts = insight.split(/[:：]/);
+                  const title = parts.length > 1 ? parts[0] : null;
+                  const content = parts.length > 1 ? parts.slice(1).join(':') : insight;
+                  return (
+                    <div key={idx} className="group p-4 rounded-xl bg-white border border-gray-100 hover:border-blue-200 hover:shadow-md transition-all duration-300">
+                      <div className="flex gap-3">
+                          <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 font-bold text-xs mt-0.5 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                              {idx + 1}
+                          </div>
+                          <div className="text-sm text-gray-600 leading-relaxed">
+                              {title && <span className="block text-gray-900 font-bold mb-1">{title}</span>}
+                              {content}
+                          </div>
+                      </div>
+                    </div>
+                  );
+               })}
+             </div>
           </div>
       </div>
 
       {/* 3. Drill Down Banner */}
       {drillDown && (
-         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between animate-fade-in shadow-sm">
+         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center justify-between animate-fade-in shadow-sm mx-1">
             <div className="flex items-center gap-3">
-               <div className="bg-blue-100 p-1.5 rounded-full"><FilterX className="w-4 h-4 text-blue-600" /></div>
+               <div className="bg-blue-100 p-2 rounded-full"><FilterX className="w-4 h-4 text-blue-600" /></div>
                <div>
                   <h4 className="font-bold text-blue-800 text-sm flex items-center gap-2">{t.drillDownActive}: <span className="bg-white px-2 py-0.5 rounded border border-blue-200 text-blue-600 font-mono">{drillDown.column} = {drillDown.value}</span></h4>
                   <p className="text-xs text-blue-600 mt-0.5">{t.drillDownDesc}</p>
                </div>
             </div>
-            <button onClick={() => setDrillDown(null)} className="text-sm text-blue-600 hover:text-blue-800 font-medium hover:underline px-3 py-1">{t.clearDrillDown}</button>
+            <button onClick={() => setDrillDown(null)} className="text-sm text-blue-600 hover:text-blue-800 font-bold hover:bg-blue-100 px-4 py-1.5 rounded-lg transition-colors">{t.clearDrillDown}</button>
          </div>
       )}
 
-      {/* 4. Key Insights */}
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-         <div className="flex items-center gap-2 mb-4">
-            <Lightbulb className="w-5 h-5 text-yellow-500" />
-            <h3 className="text-lg font-bold text-gray-800">{t.sheetInsights}</h3>
-         </div>
-         <div className="space-y-4">
-           {analysis.keyInsights.map((insight, idx) => {
-              const parts = insight.split(/[:：]/);
-              const title = parts.length > 1 ? parts[0] : null;
-              const content = parts.length > 1 ? parts.slice(1).join(':') : insight;
-              return (
-                <div key={idx} className="flex gap-4 p-4 rounded-xl border border-gray-50 hover:border-blue-100 hover:shadow-sm transition-all group bg-white">
-                  <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 font-bold text-sm group-hover:bg-indigo-600 group-hover:text-white transition-colors">{idx + 1}</div>
-                  <div className="text-gray-700 leading-relaxed">{title && <strong className="block text-gray-900 mb-1 text-lg">{title}</strong>}{content}</div>
-                </div>
-              );
-           })}
-         </div>
-      </div>
-
-      {/* 5. Charts Grid (Draggable) */}
+      {/* 4. Charts Grid (Draggable) */}
       <ResponsiveGridLayout
         className="layout"
         layouts={layouts}
@@ -235,7 +310,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         {analysis.charts.map((chart, index) => {
           const hasData = filteredData.length > 0;
           return (
-             <div key={chart.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+             <div key={chart.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col hover:shadow-md transition-shadow">
                 {hasData ? (
                    <ChartRenderer 
                      config={chart} 
@@ -257,7 +332,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         })}
       </ResponsiveGridLayout>
 
-      {/* 6. Data Preview Table (Now handles its own filtering UI) */}
+      {/* 5. Data Preview Table */}
       <DataTable data={filteredData} language={language} itemsPerPage={10} />
 
     </div>

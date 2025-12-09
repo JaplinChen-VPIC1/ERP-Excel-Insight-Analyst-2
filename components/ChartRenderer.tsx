@@ -10,7 +10,7 @@ import {
 import { 
   Palette, 
   BarChart3, LineChart as LineChartIcon, PieChart as PieChartIcon, Activity, Radar as RadarIcon, MousePointer2,
-  Minus, Plus, ImageDown, Loader2, MoveVertical, GripHorizontal
+  Minus, Plus, ImageDown, Loader2, MoveVertical, GripHorizontal, SlidersHorizontal
 } from 'lucide-react';
 import { ChartConfig, ExcelDataRow, Language } from '../types';
 import { aggregateData, PALETTES, formatNumber, formatCompactNumber, exportToImage } from '../utils';
@@ -29,12 +29,17 @@ interface ChartRendererProps {
 const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDataClick, language, drillDown, onClearDrillDown }) => {
   const [currentPalette, setCurrentPalette] = useState<keyof typeof PALETTES>('default');
   const [currentType, setCurrentType] = useState<ChartConfig['type']>(config.type);
+  
+  // Data State
+  const [currentXKey, setCurrentXKey] = useState(config.xAxisKey || '');
+  const [currentDataKey, setCurrentDataKey] = useState(config.dataKey || '');
+
   const [showLabels, setShowLabels] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   
   // Menu States
-  const [activeMenu, setActiveMenu] = useState<'none' | 'type' | 'palette' | 'layout'>('none');
+  const [activeMenu, setActiveMenu] = useState<'none' | 'type' | 'palette' | 'layout' | 'data'>('none');
   
   // Font size state
   const [xAxisFontSize, setXAxisFontSize] = useState(11);
@@ -48,6 +53,11 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
 
   const menuRef = useRef<HTMLDivElement>(null);
   const t = translations[language];
+
+  useEffect(() => {
+    setCurrentXKey(config.xAxisKey || '');
+    setCurrentDataKey(config.dataKey || '');
+  }, [config]);
 
   // Close menus when clicking outside
   useEffect(() => {
@@ -97,33 +107,39 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
     document.body.style.cursor = 'ns-resize';
   };
 
+  const columns = useMemo(() => {
+    if (data.length === 0) return [];
+    return Object.keys(data[0]);
+  }, [data]);
+
   const chartData = useMemo(() => {
-    const aggregated = aggregateData(data, config.xAxisKey, config.dataKey);
+    if (!currentXKey || !currentDataKey) return [];
+    const aggregated = aggregateData(data, currentXKey, currentDataKey);
     const isDateKey = aggregated.every(item => {
-      const key = String(item[config.xAxisKey]);
+      const key = String(item[currentXKey]);
       return /^(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/.test(key) || /^(19|20)\d{2}(0[1-9]|1[0-2])$/.test(key);
     });
 
     if (isDateKey) {
        return aggregated.sort((a, b) => {
-         const keyA = String(a[config.xAxisKey]);
-         const keyB = String(b[config.xAxisKey]);
+         const keyA = String(a[currentXKey]);
+         const keyB = String(b[currentXKey]);
          return keyA.localeCompare(keyB);
        });
     }
 
     return aggregated;
-  }, [data, config.xAxisKey, config.dataKey]);
+  }, [data, currentXKey, currentDataKey]);
 
   const colors = useMemo(() => PALETTES[currentPalette], [currentPalette]);
 
   const handleChartClick = (data: any) => {
     if (onDataClick && data) {
-      const activeLabel = data.activeLabel || data.name || data.payload?.[config.xAxisKey];
+      const activeLabel = data.activeLabel || data.name || data.payload?.[currentXKey];
       if (activeLabel) {
-        onDataClick(config.xAxisKey, String(activeLabel));
-      } else if (data.payload && data.payload[config.xAxisKey]) {
-         onDataClick(config.xAxisKey, String(data.payload[config.xAxisKey]));
+        onDataClick(currentXKey, String(activeLabel));
+      } else if (data.payload && data.payload[currentXKey]) {
+         onDataClick(currentXKey, String(data.payload[currentXKey]));
       }
     }
   };
@@ -152,12 +168,12 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
 
   // --- Logic for Tooltip Labeling and Formatting ---
   const isPercentageColumn = (key: string) => {
-    const k = key.toLowerCase();
+    const k = String(key).toLowerCase();
     return k.includes('rate') || k.includes('percent') || k.includes('avg') || k.includes('yield') || k.includes('率') || k.includes('比') || k.includes('達成');
   };
 
   const isCountColumn = (key: string) => {
-    const k = key.toLowerCase();
+    const k = String(key).toLowerCase();
     return k.includes('id') || k.includes('no') || k.includes('code') || k.includes('號') || k.includes('單') || k.includes('代碼');
   };
 
@@ -170,7 +186,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
           <p className="font-bold text-gray-800 mb-2 border-b border-gray-100 pb-1">{label}</p>
           {payload.map((entry: any, i: number) => {
             // Determine Label
-            let displayName = entry.name || config.dataKey;
+            let displayName = entry.name || currentDataKey;
             // If it's a count column (like 'Order No'), visually append (Count) or (數量)
             if (isCountColumn(displayName)) {
                 displayName = language === 'zh-TW' ? `${displayName} (數量)` : `${displayName} (Count)`;
@@ -179,7 +195,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
             // Determine Value Format
             let displayValue = formatNumber(entry.value);
             // If it's a percentage column, format as %
-            if (isPercentageColumn(config.dataKey)) {
+            if (isPercentageColumn(currentDataKey)) {
                 const num = Number(entry.value);
                 if (!isNaN(num)) {
                     displayValue = `${(num * 100).toFixed(2)}%`;
@@ -210,7 +226,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
     const axisHeight = Math.max(50, marginBottom);
 
     const XAxisProps = {
-      dataKey: config.xAxisKey,
+      dataKey: currentXKey,
       tick: { fontSize: xAxisFontSize, fill: '#64748b' },
       interval: (isExpanded ? 0 : 'preserveStartEnd') as 'preserveStartEnd' | 0,
       angle: -45,
@@ -244,7 +260,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
     const YAxisProps = {
        tickFormatter: (val: any) => {
            // Percentage Axis Scaling
-           if (isPercentageColumn(config.dataKey)) {
+           if (isPercentageColumn(currentDataKey)) {
                return `${(Number(val) * 100).toFixed(0)}%`;
            }
            return formatCompactNumber(val);
@@ -266,7 +282,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
       position: "top" as const, 
       offset: 10, 
       formatter: (val: any) => {
-           if (isPercentageColumn(config.dataKey)) {
+           if (isPercentageColumn(currentDataKey)) {
                return `${(Number(val) * 100).toFixed(1)}%`;
            }
            return formatCompactNumber(val);
@@ -283,7 +299,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
             <stop offset="100%" stopColor={colors[i % colors.length]} stopOpacity={0.4}/>
           </linearGradient>
         ))}
-        <linearGradient id={`gradient-area-${index}`} x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={`gradient-area-${config.id}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor={colors[0]} stopOpacity={0.3}/>
             <stop offset="95%" stopColor={colors[0]} stopOpacity={0}/>
         </linearGradient>
@@ -301,8 +317,8 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
             <YAxis {...YAxisProps} />
             <Tooltip content={<CustomTooltip />} cursor={{fill: '#f8fafc', opacity: 0.5}} />
             <Bar 
-                dataKey={config.dataKey} 
-                name={config.dataKey} 
+                dataKey={currentDataKey} 
+                name={currentDataKey} 
                 radius={[6, 6, 0, 0]} 
                 maxBarSize={60}
             >
@@ -314,7 +330,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
                   className="hover:opacity-80 transition-opacity"
                 />
               ))}
-              {showLabels && <LabelList dataKey={config.dataKey} {...LabelProps} />}
+              {showLabels && <LabelList dataKey={currentDataKey} {...LabelProps} />}
             </Bar>
           </BarChart>
         );
@@ -327,13 +343,13 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
             <Tooltip content={<CustomTooltip />} />
             <Line 
               type="monotone" 
-              dataKey={config.dataKey} 
+              dataKey={currentDataKey} 
               stroke={colors[0]} 
               strokeWidth={3}
               dot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: colors[0] }}
               activeDot={{ r: 6, stroke: colors[0], strokeWidth: 2, fill: '#fff' }}
             >
-               {showLabels && <LabelList dataKey={config.dataKey} {...LabelProps} />}
+               {showLabels && <LabelList dataKey={currentDataKey} {...LabelProps} />}
             </Line>
           </LineChart>
         );
@@ -347,13 +363,13 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
             <Tooltip content={<CustomTooltip />} />
             <Area 
               type="monotone" 
-              dataKey={config.dataKey} 
+              dataKey={currentDataKey} 
               stroke={colors[0]} 
               strokeWidth={2}
               fillOpacity={1} 
               fill={`url(#gradient-area-${config.id})`} 
             >
-               {showLabels && <LabelList dataKey={config.dataKey} {...LabelProps} />}
+               {showLabels && <LabelList dataKey={currentDataKey} {...LabelProps} />}
             </Area>
           </AreaChart>
         );
@@ -369,8 +385,8 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
               outerRadius={isExpanded ? "75%" : "70%"}
               innerRadius={isExpanded ? "40%" : "35%"} // Donut chart style
               paddingAngle={2}
-              dataKey={config.dataKey}
-              nameKey={config.xAxisKey}
+              dataKey={currentDataKey}
+              nameKey={currentXKey}
               onClick={onDataClick ? handleChartClick : undefined} 
               cursor={onDataClick ? 'pointer' : 'default'}
               stroke="#fff"
@@ -393,14 +409,14 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
         return (
           <ScatterChart key={isExpanded ? 'exp-scatter' : 'scatter'} {...commonProps}>
             {showGrid && <CartesianGrid {...GridProps} />}
-            <XAxis dataKey={config.xAxisKey} name={config.xAxisKey} {...XAxisProps} />
-            <YAxis dataKey={config.dataKey} name={config.dataKey} {...YAxisProps} />
+            <XAxis dataKey={currentXKey} name={currentXKey} {...XAxisProps} />
+            <YAxis dataKey={currentDataKey} name={currentDataKey} {...YAxisProps} />
             <Tooltip cursor={{ strokeDasharray: '3 3' }} content={<CustomTooltip />} />
             <Scatter name={config.title} data={chartData} fill={colors[0]} onClick={onDataClick ? (data) => handleChartClick(data) : undefined} cursor={onDataClick ? 'pointer' : 'default'}>
               {chartData.map((entry, index) => (
                  <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
               ))}
-              {showLabels && <LabelList dataKey={config.dataKey} position="top" style={{ fontSize: 10, fill: '#666' }} formatter={formatCompactNumber} />}
+              {showLabels && <LabelList dataKey={currentDataKey} position="top" style={{ fontSize: 10, fill: '#666' }} formatter={formatCompactNumber} />}
             </Scatter>
           </ScatterChart>
         );
@@ -408,11 +424,11 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
         return (
           <RadarChart key={isExpanded ? 'exp-radar' : 'radar'} cx="50%" cy="50%" outerRadius={isExpanded ? "70%" : "60%"} data={chartData} margin={{ top: 10, bottom: 30, left: 10, right: 10 }}>
             <PolarGrid stroke="#e2e8f0" />
-            <PolarAngleAxis dataKey={config.xAxisKey} tick={{ fontSize: 10, fill: '#64748b' }} />
+            <PolarAngleAxis dataKey={currentXKey} tick={{ fontSize: 10, fill: '#64748b' }} />
             <PolarRadiusAxis angle={30} domain={[0, 'auto']} tickFormatter={formatCompactNumber} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} />
             <Radar
-              name={config.dataKey}
-              dataKey={config.dataKey}
+              name={currentDataKey}
+              dataKey={currentDataKey}
               stroke={colors[0]}
               fill={colors[0]}
               fillOpacity={0.4}
@@ -462,6 +478,42 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
             data-html2canvas-ignore
             ref={menuRef}
           >
+
+             {/* 0. Data Axes Configuration */}
+             <div className="relative">
+               <button 
+                  onClick={() => setActiveMenu(activeMenu === 'data' ? 'none' : 'data')}
+                  className={`p-1.5 rounded-md transition-colors ${activeMenu === 'data' ? 'bg-orange-50 text-orange-600' : 'text-gray-400 hover:text-orange-600 hover:bg-gray-50'}`}
+                  title={t.dataSettings}
+               >
+                 <SlidersHorizontal className="w-4 h-4" />
+               </button>
+               {activeMenu === 'data' && (
+                 <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 p-3 z-30 animate-fade-in flex flex-col gap-3">
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 mb-1 block">{t.xAxis}</label>
+                        <select 
+                            value={currentXKey} 
+                            onChange={(e) => setCurrentXKey(e.target.value)}
+                            className="w-full text-xs p-2 border border-gray-200 rounded-lg bg-gray-50 focus:ring-2 focus:ring-orange-200 outline-none"
+                        >
+                            {columns.map(col => <option key={col} value={col}>{col}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-gray-500 mb-1 block">{t.yAxis}</label>
+                        <select 
+                            value={currentDataKey} 
+                            onChange={(e) => setCurrentDataKey(e.target.value)}
+                            className="w-full text-xs p-2 border border-gray-200 rounded-lg bg-gray-50 focus:ring-2 focus:ring-orange-200 outline-none"
+                        >
+                            {columns.map(col => <option key={col} value={col}>{col}</option>)}
+                        </select>
+                    </div>
+                 </div>
+               )}
+             </div>
+
              {/* 1. Chart Type */}
              <div className="relative">
                <button 
