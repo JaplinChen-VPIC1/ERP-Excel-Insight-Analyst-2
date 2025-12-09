@@ -60,6 +60,14 @@ export interface AnalysisGroup {
   templateIds: string[];
 }
 
+// --- Export Types ---
+export interface TableStyleConfig {
+  headerBg: string;
+  headerText: string;
+  rowOdd: string;
+  rowEven: string;
+}
+
 // --- File System Access Types (Polyfill-like) ---
 export interface FileSystemHandle {
   kind: 'file' | 'directory';

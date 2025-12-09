@@ -2,9 +2,7 @@
 import * as XLSX from 'xlsx';
 import { ExcelDataRow, AnalysisResult, Language } from './types';
 import { translations } from './i18n';
-import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import PptxGenJS from 'pptxgenjs';
 
 export const CHART_COLORS = [
   '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'
@@ -301,10 +299,13 @@ export const formatCompactNumber = (value: number | string | null | undefined): 
 export const aggregateData = (data: ExcelDataRow[], xAxisKey: string, dataKey: string): any[] => {
   // Guard clauses
   if (!data || !data.length || !xAxisKey || !dataKey) return [];
+  // Ensure xAxisKey and dataKey are strings before checking includes/toLowerCase
+  const safeXKey = String(xAxisKey);
+  const safeDataKey = String(dataKey);
 
   const map = new Map<string, { sum: number; count: number }>();
   let mode: 'sum' | 'count' | 'average' = 'sum';
-  const keyLower = String(dataKey).toLowerCase();
+  const keyLower = safeDataKey.toLowerCase();
   
   if (keyLower.includes('rate') || keyLower.includes('percent') || keyLower.includes('avg') || keyLower.includes('yield') || keyLower.includes('率') || keyLower.includes('平均') || keyLower.includes('占比') || keyLower.includes('達成')) {
     mode = 'average';
@@ -313,16 +314,16 @@ export const aggregateData = (data: ExcelDataRow[], xAxisKey: string, dataKey: s
   }
 
   if (mode === 'sum') {
-    const firstValid = data.find(r => r[dataKey] !== null && r[dataKey] !== undefined);
+    const firstValid = data.find(r => r[safeDataKey] !== null && r[safeDataKey] !== undefined);
     if (firstValid) {
-       const val = firstValid[dataKey];
+       const val = firstValid[safeDataKey];
        if (typeof val === 'string' && isNaN(Number(val))) mode = 'count';
     }
   }
 
   for (const row of data) {
-    const xValue = row[xAxisKey];
-    const yValue = row[dataKey];
+    const xValue = row[safeXKey];
+    const yValue = row[safeDataKey];
     if (xValue === undefined || xValue === null) continue;
     const key = String(xValue);
     let numVal = 0;
@@ -343,11 +344,12 @@ export const aggregateData = (data: ExcelDataRow[], xAxisKey: string, dataKey: s
   const result = Array.from(map.entries()).map(([name, stat]) => {
       let finalValue = stat.sum;
       if (mode === 'average' && stat.count > 0) finalValue = stat.sum / stat.count;
-      return { [xAxisKey]: name, [dataKey]: finalValue, name: name, value: finalValue };
+      return { [safeXKey]: name, [safeDataKey]: finalValue, name: name, value: finalValue };
     });
 
-  const xColType = detectColumnType(data.slice(0, 20), xAxisKey);
-  if (xColType === 'date' || xAxisKey.toLowerCase().includes('date') || xAxisKey.toLowerCase().includes('日')) {
+  const xColType = detectColumnType(data.slice(0, 20), safeXKey);
+  const xKeyLower = safeXKey.toLowerCase();
+  if (xColType === 'date' || xKeyLower.includes('date') || xKeyLower.includes('日')) {
       return result.sort((a, b) => {
           const keyA = String(a.name);
           const keyB = String(b.name);
@@ -370,167 +372,6 @@ export const aggregateData = (data: ExcelDataRow[], xAxisKey: string, dataKey: s
   } else {
       return result.sort((a, b) => b.value - a.value).slice(0, 12);
   }
-};
-
-export const exportToCSV = (data: ExcelDataRow[], filename: string) => {
-  if (!data || !data.length) return;
-  const headers = Object.keys(data[0]);
-  const csvContent = [
-    headers.join(','),
-    ...data.map(row => headers.map(header => {
-        const value = row[header];
-        if (value === null || value === undefined) return '';
-        const stringValue = String(value);
-        if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
-          return `"${stringValue.replace(/"/g, '""')}"`;
-        }
-        return stringValue;
-      }).join(','))
-  ].join('\n');
-  const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-};
-
-export const exportToJSON = (data: ExcelDataRow[], filename: string) => {
-  if (!data || !data.length) return;
-  const jsonContent = JSON.stringify(data, null, 2);
-  const blob = new Blob([jsonContent], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', filename);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-};
-
-export const exportToExcel = (data: ExcelDataRow[], filename: string, analysis: AnalysisResult | null, language: Language) => {
-  if (!data || !data.length) return;
-  const t = translations[language];
-  const workbook = XLSX.utils.book_new();
-
-  if (analysis) {
-    const ws1_data: any[][] = [];
-    const merges: XLSX.Range[] = [];
-    ws1_data.push([t.reportTitle.toUpperCase()]);
-    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }); 
-    ws1_data.push([]); 
-    ws1_data.push([t.aiSummary]);
-    merges.push({ s: { r: 2, c: 0 }, e: { r: 2, c: 6 } }); 
-    ws1_data.push([analysis.summary]);
-    merges.push({ s: { r: 3, c: 0 }, e: { r: 4, c: 6 } }); 
-    ws1_data.push([]); ws1_data.push([]); 
-    ws1_data.push(["KEY INSIGHTS"]);
-    merges.push({ s: { r: 6, c: 0 }, e: { r: 6, c: 6 } });
-    analysis.keyInsights.forEach((insight, idx) => {
-        const rowIdx = ws1_data.length;
-        ws1_data.push([`${idx + 1}. ${insight}`]);
-        merges.push({ s: { r: rowIdx, c: 0 }, e: { r: rowIdx, c: 6 } }); 
-    });
-    const sheet1 = XLSX.utils.aoa_to_sheet(ws1_data);
-    sheet1['!merges'] = merges;
-    sheet1['!cols'] = [{ wch: 100 }];
-    XLSX.utils.book_append_sheet(workbook, sheet1, t.sheetInsights);
-  }
-
-  if (analysis && analysis.charts) {
-    let ws2_data: any[][] = [];
-    ws2_data.push(["VISUAL ANALYSIS DATA"]);
-    ws2_data.push([]);
-    analysis.charts.forEach((chart, index) => {
-        ws2_data.push([`CHART #${index + 1}: ${chart.title}`]);
-        ws2_data.push([`Analysis: ${chart.description}`]);
-        ws2_data.push([]); 
-        ws2_data.push([chart.xAxisKey, chart.dataKey]); 
-        const aggData = aggregateData(data, chart.xAxisKey, chart.dataKey);
-        aggData.forEach(item => ws2_data.push([item[chart.xAxisKey], item[chart.dataKey]]));
-        const total = aggData.reduce((sum, item) => sum + (item[chart.dataKey] || 0), 0);
-        ws2_data.push(["Total", total]);
-        ws2_data.push([]); ws2_data.push([]); ws2_data.push([]);
-    });
-    const sheet2 = XLSX.utils.aoa_to_sheet(ws2_data);
-    sheet2['!cols'] = [{ wch: 30 }, { wch: 20 }];
-    XLSX.utils.book_append_sheet(workbook, sheet2, t.sheetCharts);
-  }
-
-  const sheet3 = XLSX.utils.json_to_sheet(data);
-  const colWidths = Object.keys(data[0] || {}).map(key => ({ wch: Math.min(30, Math.max(10, key.length + 5)) }));
-  sheet3['!cols'] = colWidths;
-  XLSX.utils.book_append_sheet(workbook, sheet3, t.sheetData);
-  XLSX.writeFile(workbook, filename);
-};
-
-export const exportToPDF = async (elementId: string, filename: string) => {
-  const element = document.getElementById(elementId);
-  if (!element) return;
-  try {
-    const canvas = await html2canvas(element, { scale: 2, useCORS: true, logging: false });
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const margin = 10; 
-    const imgWidth = 210 - (margin * 2); 
-    const pageHeight = 297; 
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-    let heightLeft = imgHeight;
-    let position = margin; 
-    pdf.addImage(imgData, 'PNG', margin, position, imgWidth, imgHeight);
-    heightLeft -= (pageHeight - margin * 2);
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight; 
-      pdf.addPage();
-      pdf.addImage(imgData, 'PNG', margin, - (pageHeight - margin) + (heightLeft % pageHeight) , imgWidth, imgHeight); 
-      heightLeft -= 297;
-    }
-    pdf.save(filename);
-  } catch (error) {
-    console.error("PDF Export failed:", error);
-    throw error;
-  }
-};
-
-export const exportToPPTX = async (analysis: AnalysisResult, filename: string, language: Language) => {
-  const t = translations[language];
-  const pptx = new PptxGenJS();
-  const slide1 = pptx.addSlide();
-  slide1.addText(t.reportTitle, { x: 0.5, y: 1.5, w: '90%', fontSize: 36, bold: true, align: 'center', color: '363636' });
-  slide1.addText(`${t.poweredBy}`, { x: 0.5, y: 3.5, w: '90%', fontSize: 18, align: 'center', color: '888888' });
-  slide1.addText(new Date().toLocaleDateString(), { x: 0.5, y: 4.5, w: '90%', fontSize: 14, align: 'center', color: 'aaaaaa' });
-
-  const slide2 = pptx.addSlide();
-  slide2.addText(t.aiSummary, { x: 0.5, y: 0.5, w: '90%', fontSize: 24, bold: true, color: '2563EB' });
-  slide2.addText(analysis.summary, { x: 0.5, y: 1.2, w: '90%', h: 3, fontSize: 14, color: '333333', valign: 'top' });
-  
-  const slide3 = pptx.addSlide();
-  slide3.addText('Key Insights', { x: 0.5, y: 0.5, w: '90%', fontSize: 24, bold: true, color: '2563EB' });
-  const insightsText = analysis.keyInsights.map((insight, idx) => `${idx + 1}. ${insight}`).join('\n\n');
-  slide3.addText(insightsText, { x: 0.5, y: 1.2, w: '90%', h: 4, fontSize: 14, color: '333333', valign: 'top' });
-
-  for (let i = 0; i < analysis.charts.length; i++) {
-    const chartConfig = analysis.charts[i];
-    const chartElement = document.getElementById(`chart-container-${i}`);
-    if (chartElement) {
-      const slide = pptx.addSlide();
-      slide.addText(chartConfig.title, { x: 0.5, y: 0.4, w: '90%', fontSize: 20, bold: true, color: '333333' });
-      slide.addText(chartConfig.description, { x: 0.5, y: 0.9, w: '90%', fontSize: 12, color: '666666' });
-      try {
-        const canvas = await html2canvas(chartElement, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
-        const imgData = canvas.toDataURL('image/png');
-        slide.addImage({ data: imgData, x: 0.5, y: 1.5, w: 9, h: 3.8, sizing: { type: 'contain', w: 9, h: 3.8 } });
-      } catch (err) {
-        console.error(`Failed to capture chart ${i}`, err);
-        slide.addText("Image Capture Failed", { x: 4, y: 3, color: 'FF0000' });
-      }
-    }
-  }
-  pptx.writeFile({ fileName: filename });
 };
 
 export const exportToImage = async (elementId: string, filename: string) => {

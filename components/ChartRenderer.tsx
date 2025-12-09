@@ -463,7 +463,8 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ config, data, index, onDa
       >
         <div className="flex justify-between items-start mb-4">
           <div className="flex-1 pr-4 min-w-0">
-            <h3 className="font-bold text-gray-800 text-lg leading-tight mb-1 truncate" title={config.title}>{config.title}</h3>
+            {/* Removed truncate to allow full title visibility for exports */}
+            <h3 className="font-bold text-gray-800 text-lg leading-tight mb-1">{config.title}</h3>
             {/* Improved Description Area: Scrollable, no truncation */}
             <div className="max-h-24 overflow-y-auto pr-2 custom-scrollbar break-words">
                 <p className="text-sm text-gray-500 leading-relaxed">

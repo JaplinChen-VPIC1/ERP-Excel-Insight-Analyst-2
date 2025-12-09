@@ -1,8 +1,9 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { ExcelDataRow, Language } from '../types';
-import { ArrowUp, ArrowDown, ArrowUpDown, ChevronLeft, ChevronRight, Table as TableIcon, Check, ChevronDown, AlertCircle, Calendar, Filter, Plus, Trash2, X, AlertTriangle } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowUpDown, ChevronLeft, ChevronRight, Table as TableIcon, Check, ChevronDown, AlertCircle, Calendar, Filter, Plus, Trash2, X, AlertTriangle, Download } from 'lucide-react';
 import { formatNumber, detectColumnType, parseDateSafe } from '../utils';
+import { exportToCSV } from '../services/export/csvExport';
+import { exportPreviewToExcel } from '../services/export/excelExport';
 import { translations } from '../i18n';
 
 interface FilterCriterion {
@@ -39,6 +40,15 @@ const TABLE_THEMES: TableTheme[] = [
   { id: 'dark-gray', nameKey: 'styleDark', headerBg: 'bg-gray-800', headerText: 'text-white', rowOdd: 'bg-gray-100', rowEven: 'bg-white', hover: 'hover:bg-gray-200', border: 'border-gray-300', divider: 'border-gray-600' },
 ];
 
+// Mapping of Tailwind visual themes to Hex codes for Excel Export
+const THEME_HEX_MAP: Record<string, { headerBg: string, headerText: string, rowOdd: string, rowEven: string }> = {
+  'light-simple': { headerBg: 'F9FAFB', headerText: '374151', rowOdd: 'FFFFFF', rowEven: 'FFFFFF' },
+  'medium-blue': { headerBg: '2563EB', headerText: 'FFFFFF', rowOdd: 'EFF6FF', rowEven: 'FFFFFF' },
+  'medium-orange': { headerBg: 'F97316', headerText: 'FFFFFF', rowOdd: 'FFF7ED', rowEven: 'FFFFFF' },
+  'medium-green': { headerBg: '059669', headerText: 'FFFFFF', rowOdd: 'ECFDF5', rowEven: 'FFFFFF' },
+  'dark-gray': { headerBg: '1F2937', headerText: 'FFFFFF', rowOdd: 'F3F4F6', rowEven: 'FFFFFF' },
+};
+
 const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' | null }>({ key: '', direction: null });
@@ -55,15 +65,22 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
   const [newFilterVal2, setNewFilterVal2] = useState('');
   const [filterError, setFilterError] = useState('');
 
+  // Export State
+  const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
+
   const t = translations[language];
   const activeTheme = TABLE_THEMES.find(th => th.id === activeThemeId) || TABLE_THEMES[0];
   const styleMenuRef = useRef<HTMLDivElement>(null);
+  const exportDropdownRef = useRef<HTMLDivElement>(null);
   const resizingRef = useRef<{ col: string; startX: number; startWidth: number } | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (styleMenuRef.current && !styleMenuRef.current.contains(event.target as Node)) {
         setIsStyleMenuOpen(false);
+      }
+      if (exportDropdownRef.current && !exportDropdownRef.current.contains(event.target as Node)) {
+        setIsExportDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -340,6 +357,30 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
     setColumnWidths(prev => ({ ...prev, [col]: newWidth }));
   };
 
+  const handleExport = (type: 'csv' | 'excel') => {
+    const filename = `data_preview_${new Date().toISOString().slice(0,10)}`;
+    
+    // We create a WYSIWYG (What You See Is What You Get) dataset for export
+    const exportData = sortedData.map(row => {
+        const newRow: Record<string, any> = {};
+        columns.forEach(col => {
+            const type = columnTypes[col];
+            // Apply visual formatting to the data before export
+            newRow[col] = formatCellValue(row[col], type, col);
+        });
+        return newRow;
+    });
+
+    if (type === 'csv') {
+        exportToCSV(exportData, `${filename}.csv`);
+    } else {
+        // Pass the style configuration for the active theme
+        const themeColors = THEME_HEX_MAP[activeThemeId] || THEME_HEX_MAP['light-simple'];
+        exportPreviewToExcel(exportData, `${filename}.xlsx`, themeColors);
+    }
+    setIsExportDropdownOpen(false);
+  };
+
   // --- OPTIMIZED VISUAL VALIDATION LOGIC ---
   const getCellStatus = (val: any, type: string, row: ExcelDataRow, colName: string): { classes: string, icon?: React.ReactNode } => {
     if (val === null || val === undefined) return { classes: 'bg-yellow-50 text-gray-400 italic' };
@@ -454,6 +495,33 @@ const DataTable: React.FC<DataTableProps> = ({ data, language, itemsPerPage = 10
            </div>
            
            <div className="flex items-center gap-3">
+              <div className="relative" ref={exportDropdownRef}>
+                <button
+                    onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                    className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                >
+                    <Download className="w-3 h-3" />
+                    {t.export}
+                    <ChevronDown className="w-3 h-3" />
+                </button>
+                {isExportDropdownOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-40 bg-white rounded-lg shadow-xl border border-gray-100 p-1 z-20">
+                        <button
+                            onClick={() => handleExport('csv')}
+                            className="flex items-center gap-2 w-full p-2 text-xs text-gray-600 hover:bg-gray-50 rounded-md"
+                        >
+                            {t.exportCSV}
+                        </button>
+                        <button
+                            onClick={() => handleExport('excel')}
+                            className="flex items-center gap-2 w-full p-2 text-xs text-gray-600 hover:bg-gray-50 rounded-md"
+                        >
+                            {t.exportExcel}
+                        </button>
+                    </div>
+                )}
+              </div>
+
               <button 
                 onClick={() => setIsFilterOpen(!isFilterOpen)} 
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors border ${isFilterOpen || filters.length > 0 ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}

@@ -24,7 +24,7 @@ const App: React.FC = () => {
   
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<number>(Date.now());
-  const [language, setLanguage] = useState<Language>('en-US');
+  const [language, setLanguage] = useState<Language>('zh-TW');
   const t = translations[language];
 
   const [isConfigOpen, setIsConfigOpen] = useState(false);

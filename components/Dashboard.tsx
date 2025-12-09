@@ -4,7 +4,10 @@ import { AnalysisResult, ExcelDataRow, Language } from '../types';
 import ChartRenderer from './ChartRenderer';
 import DataTable from './DataTable';
 import { Sparkles, FileText, Download, FilterX, RefreshCw, Clock, AlertCircle, Lightbulb, Loader2, ChevronDown, Plus } from 'lucide-react';
-import { exportToCSV, exportToJSON, exportToExcel, exportToPDF, exportToPPTX } from '../utils';
+import { exportToCSV, exportToJSON } from '../services/export/csvExport';
+import { exportToExcel } from '../services/export/excelExport';
+import { exportToPDF } from '../services/export/pdfExport';
+import { exportToPPTX } from '../services/export/pptExport';
 import { translations } from '../i18n';
 import { Responsive, WidthProvider } from 'react-grid-layout';
 
@@ -106,7 +109,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         if (format === 'json') exportToJSON(filteredData, `${fileName || 'export'}.json`);
         if (format === 'excel') exportToExcel(filteredData, `${fileName || 'export'}.xlsx`, analysis, language);
         if (format === 'pdf') await exportToPDF('dashboard-content', `${fileName || 'report'}.pdf`);
-        if (format === 'pptx') await exportToPPTX(analysis, `${fileName || 'presentation'}.pptx`, language);
+        if (format === 'pptx') await exportToPPTX(analysis, `${fileName || 'presentation'}.pptx`, language, fileName);
       } catch (e) {
         console.error(e);
         alert(t.unknownError);
@@ -212,7 +215,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                    </button>
                    {isExportMenuOpen && (
                       <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-100 p-1 z-50 animate-fade-in">
-                         {['csv', 'json', 'excel', 'pdf', 'pptx'].map(fmt => (
+                         {['pdf', 'pptx'].map(fmt => (
                             <button key={fmt} onClick={() => handleExport(fmt as any)} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-md">{(t as any)[`export${fmt.toUpperCase()}`]}</button>
                          ))}
                       </div>
@@ -227,7 +230,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* 2. Combined AI Summary & Insights Card (New Layout) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div id="dashboard-summary-section" className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Executive Summary Column (1/3) */}
           <div className="lg:col-span-1 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
               <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-6 py-4 flex items-center gap-3">
@@ -298,42 +301,46 @@ const Dashboard: React.FC<DashboardProps> = ({
       )}
 
       {/* 4. Charts Grid (Draggable) */}
-      <ResponsiveGridLayout
-        className="layout"
-        layouts={layouts}
-        breakpoints={{ lg: 1200, md: 996, sm: 768 }}
-        cols={{ lg: 12, md: 12, sm: 12 }}
-        rowHeight={30}
-        draggableHandle=".drag-handle"
-        onLayoutChange={(currentLayout, allLayouts) => setLayouts(allLayouts)}
-      >
-        {analysis.charts.map((chart, index) => {
-          const hasData = filteredData.length > 0;
-          return (
-             <div key={chart.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col hover:shadow-md transition-shadow">
-                {hasData ? (
-                   <ChartRenderer 
-                     config={chart} 
-                     data={filteredData} 
-                     index={index} 
-                     onDataClick={handleChartClick}
-                     language={language}
-                     drillDown={drillDown}
-                     onClearDrillDown={() => setDrillDown(null)}
-                   />
-                ) : (
-                   <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
-                      <AlertCircle className="w-8 h-8 mb-2 opacity-50" />
-                      <p>{t.chartNoData}</p>
-                   </div>
-                )}
-             </div>
-          );
-        })}
-      </ResponsiveGridLayout>
+      <div id="dashboard-visuals-section" className="relative">
+          <ResponsiveGridLayout
+            className="layout"
+            layouts={layouts}
+            breakpoints={{ lg: 1200, md: 996, sm: 768 }}
+            cols={{ lg: 12, md: 12, sm: 12 }}
+            rowHeight={30}
+            draggableHandle=".drag-handle"
+            onLayoutChange={(currentLayout, allLayouts) => setLayouts(allLayouts)}
+          >
+            {analysis.charts.map((chart, index) => {
+              const hasData = filteredData.length > 0;
+              return (
+                <div key={chart.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col hover:shadow-md transition-shadow">
+                    {hasData ? (
+                      <ChartRenderer 
+                        config={chart} 
+                        data={filteredData} 
+                        index={index} 
+                        onDataClick={handleChartClick}
+                        language={language}
+                        drillDown={drillDown}
+                        onClearDrillDown={() => setDrillDown(null)}
+                      />
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                          <AlertCircle className="w-8 h-8 mb-2 opacity-50" />
+                          <p>{t.chartNoData}</p>
+                      </div>
+                    )}
+                </div>
+              );
+            })}
+          </ResponsiveGridLayout>
+      </div>
 
       {/* 5. Data Preview Table */}
-      <DataTable data={filteredData} language={language} itemsPerPage={10} />
+      <div id="dashboard-preview-section">
+        <DataTable data={filteredData} language={language} itemsPerPage={10} />
+      </div>
 
     </div>
   );
