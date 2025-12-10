@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { ExcelDataRow, AnalysisResult, Language, ChatAttachment, ChatMessage, AnalysisTemplate } from '../types';
 import { getDatasetStats, getSmartSample } from '../utils';
@@ -110,7 +109,7 @@ export const analyzeDataWithGemini = async (
   }[language];
 
   // Base Context Construction
-  let roleInstruction = `You are a Senior ERP Data Analysis Consultant specializing in Digiwin Workflow ERP (鼎新 ERP). Your goal is to provide actionable business intelligence. Always respond in ${languageName}.`;
+  let roleInstruction = `You are a Senior ERP Data Analysis Consultant specializing in Enterprise Resource Planning (ERP) data analysis. Your goal is to provide actionable business intelligence. Always respond in ${languageName}.`;
   let userOverrideInstructions = "";
 
   if (templates && templates.length > 0) {

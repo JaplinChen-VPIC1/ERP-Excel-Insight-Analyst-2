@@ -69,7 +69,7 @@ const FileStaging: React.FC<FileStagingProps> = ({
               onChange={(e) => onSelectContext(e.target.value)}
               className="w-full p-3 border border-gray-300 rounded-xl bg-white shadow-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all"
             >
-              <option value="">{t.defaultAnalysis}</option>
+              {availableGroups.length === 0 && <option value="">{t.noItems}</option>}
               {availableGroups.map(g => (
                 <option key={g.id} value={g.id}>{g.name}</option>
               ))}
@@ -81,7 +81,7 @@ const FileStaging: React.FC<FileStagingProps> = ({
               onChange={(e) => onSelectContext(e.target.value)}
               className="w-full p-3 border border-gray-300 rounded-xl bg-white shadow-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             >
-              <option value="">{t.defaultAnalysis}</option>
+              {availableTemplates.length === 0 && <option value="">{t.noItems}</option>}
               {availableTemplates.map(tmpl => (
                 <option key={tmpl.id} value={tmpl.id}>{tmpl.name}</option>
               ))}

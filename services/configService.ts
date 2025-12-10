@@ -1,4 +1,3 @@
-
 import { AnalysisTemplate, AnalysisGroup } from '../types';
 import { fileSystemService } from './fileSystemService';
 
@@ -7,6 +6,8 @@ const KEYS = {
   TEMPLATES: 'app_templates',
   GROUPS: 'app_groups',
 };
+
+export const GENERAL_TEMPLATE_ID = 'general-analysis';
 
 export const BEST_PRACTICE_PROMPT_TEMPLATE = `### 1. 資料欄位標準化 (Data Standardization)
 - **[欄位語意]**: 在策略設定中，先定義欄位語意（如「單價」「幣別」「預計到貨日」「實際到貨日」）。
@@ -62,6 +63,34 @@ const load = <T>(key: string): T[] => {
 export const configService = {
   CONFIG_FILENAME: 'EXCEL_AI.json',
 
+  ensureDefaults: () => {
+    const templates = load<AnalysisTemplate>(KEYS.TEMPLATES);
+    // Ensure we have a general analysis template
+    if (!templates.some(t => t.id === GENERAL_TEMPLATE_ID)) {
+      const defaultTemplate: AnalysisTemplate = {
+        id: GENERAL_TEMPLATE_ID,
+        name: 'General Analysis (通用分析)',
+        description: 'Comprehensive analysis suitable for most datasets.',
+        systemInstruction: 'You are a Senior Data Analyst. Analyze the provided dataset to find trends, anomalies, and key insights.',
+        customPrompt: ''
+      };
+      // If there are other templates, just append. If empty, it's the first.
+      templates.push(defaultTemplate);
+      save(KEYS.TEMPLATES, templates);
+    }
+
+    const groups = load<AnalysisGroup>(KEYS.GROUPS);
+    if (groups.length === 0) {
+        const defaultGroup: AnalysisGroup = {
+          id: 'group_default',
+          name: 'General View (通用視角)',
+          description: 'Default analysis view.',
+          templateIds: [GENERAL_TEMPLATE_ID]
+        };
+        save(KEYS.GROUPS, [defaultGroup]);
+    }
+  },
+
   // Templates CRUD
   getTemplates: () => load<AnalysisTemplate>(KEYS.TEMPLATES),
   saveTemplate: (tmpl: AnalysisTemplate) => {
@@ -73,9 +102,16 @@ export const configService = {
     configService.syncMainToDisk();
   },
   deleteTemplate: (id: string) => {
+    // Prevent deleting default if we want to be strict, but user asked for flexibility.
     const list = load<AnalysisTemplate>(KEYS.TEMPLATES).filter(t => t.id !== id);
     save(KEYS.TEMPLATES, list);
     configService.syncMainToDisk();
+  },
+  
+  // Specific Helper for General Template
+  getGeneralTemplate: (): AnalysisTemplate | undefined => {
+      const templates = load<AnalysisTemplate>(KEYS.TEMPLATES);
+      return templates.find(t => t.id === GENERAL_TEMPLATE_ID);
   },
 
   // Groups CRUD
@@ -111,6 +147,9 @@ export const configService = {
     
     if (data.groups) save(KEYS.GROUPS, data.groups);
     if (data.templates) save(KEYS.TEMPLATES, data.templates);
+    
+    // Ensure the system critical defaults exist after import
+    configService.ensureDefaults();
   },
   
   // --- File System Sync Logic ---

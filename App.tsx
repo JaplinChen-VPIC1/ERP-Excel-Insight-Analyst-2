@@ -44,6 +44,9 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initApp = async () => {
+        // Ensure defaults exist (General Analysis)
+        configService.ensureDefaults();
+
         const savedHandle = await fileSystemService.getStoredHandle();
         if (savedHandle) {
             const hasPermission = await fileSystemService.verifyPermission(savedHandle, false);
@@ -145,14 +148,50 @@ const App: React.FC = () => {
 
   const handleFilesDropped = (files: File[]) => {
       setStagedFiles(files);
-      // Auto-select logic
-      if (files.length === 1 && configService.getTemplates().length > 0) {
-          setSelectedContextId(configService.getTemplates()[0].id);
-      } else if (files.length > 1 && configService.getGroups().length > 0) {
-          setSelectedContextId(configService.getGroups()[0].id);
-      } else {
-          setSelectedContextId('');
+      
+      const templates = configService.getTemplates();
+      const groups = configService.getGroups();
+      let bestMatchId = '';
+
+      // Helper for fuzzy matching
+      // Removes extensions, special chars, converts to lowercase
+      // e.g. "2024_Sales_Report.xlsx" -> "2024salesreport"
+      const normalize = (str: string) => str.toLowerCase().replace(/\.[^/.]+$/, "").replace(/[_\-\s]/g, "");
+
+      if (files.length === 1) {
+          const fileName = normalize(files[0].name);
+          
+          // Strategy: Look for a template name contained within the filename
+          // e.g. File: "2024_Sales_Report.xlsx", Template: "Sales Report" -> Match
+          const match = templates.find(t => {
+              const tName = normalize(t.name);
+              // Ensure template name is significant enough to match (> 2 chars)
+              return tName.length > 2 && fileName.includes(tName);
+          });
+
+          if (match) {
+              bestMatchId = match.id;
+          } else if (templates.length > 0) {
+              // Fallback to the first one (usually General)
+              bestMatchId = templates[0].id;
+          }
+
+      } else if (files.length > 1) {
+          // Multi-file: Check against Group Names
+          // Heuristic: Check if any file name contains the group name
+          const match = groups.find(g => {
+              const gName = normalize(g.name);
+              return gName.length > 2 && files.some(f => normalize(f.name).includes(gName));
+          });
+
+          if (match) {
+              bestMatchId = match.id;
+          } else if (groups.length > 0) {
+              bestMatchId = groups[0].id;
+          }
       }
+
+      setSelectedContextId(bestMatchId);
       setErrorMessage('');
   };
 

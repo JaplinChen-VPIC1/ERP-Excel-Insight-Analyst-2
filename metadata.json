@@ -1,5 +1,5 @@
 {
   "name": "ERP Excel Insight Analyst 2",
-  "description": "An intelligent tool to analyze Digiwin Workflow ERP 3.x Excel reports, automatically generating insights and visualizations using Gemini AI.",
+  "description": "An intelligent tool to analyze ERP Excel reports, automatically generating insights and visualizations using Gemini AI.",
   "requestFramePermissions": []
 }

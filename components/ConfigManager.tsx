@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, Settings, MessageSquare, Briefcase, Download, Upload, X, FolderSync, FolderCheck, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Settings, MessageSquare, Briefcase, Download, Upload, X, FolderSync, FolderCheck, Loader2, Star, Layers } from 'lucide-react';
 import { translations } from '../i18n';
 import { Language, AnalysisTemplate, AnalysisGroup } from '../types';
-import { configService } from '../services/configService'; 
+import { configService, GENERAL_TEMPLATE_ID } from '../services/configService'; 
 import { fileSystemService } from '../services/fileSystemService';
 import ConfigGroupEditor from './ConfigGroupEditor';
 import ConfigTemplateEditor from './ConfigTemplateEditor';
@@ -13,10 +12,11 @@ interface ConfigManagerProps {
   isOpen: boolean;
   onClose: () => void;
   onUpdate?: () => void;
-  columns?: string[]; // Kept for prop compatibility, though unused now
+  columns?: string[];
 }
 
-type Tab = 'groups' | 'templates';
+// 3 Tabs Structure
+type Tab = 'groups' | 'general' | 'templates';
 
 const ConfigManager: React.FC<ConfigManagerProps> = ({ language, isOpen, onClose, onUpdate }) => {
   const t = translations[language];
@@ -24,6 +24,9 @@ const ConfigManager: React.FC<ConfigManagerProps> = ({ language, isOpen, onClose
   const [activeTab, setActiveTab] = useState<Tab>('groups');
   const [groups, setGroups] = useState<AnalysisGroup[]>([]);
   const [templates, setTemplates] = useState<AnalysisTemplate[]>([]);
+  
+  // Specific General Template
+  const [generalTemplate, setGeneralTemplate] = useState<AnalysisTemplate | null>(null);
 
   const [editGroup, setEditGroup] = useState<Partial<AnalysisGroup> | null>(null);
   const [editTemplate, setEditTemplate] = useState<Partial<AnalysisTemplate> | null>(null);
@@ -42,7 +45,12 @@ const ConfigManager: React.FC<ConfigManagerProps> = ({ language, isOpen, onClose
 
   const refreshData = () => {
     setGroups(configService.getGroups());
-    setTemplates(configService.getTemplates());
+    const allTemplates = configService.getTemplates();
+    setTemplates(allTemplates);
+    
+    // Find General Template
+    const gen = allTemplates.find(t => t.id === GENERAL_TEMPLATE_ID);
+    setGeneralTemplate(gen || null);
   };
 
   const handleLinkFolder = async () => {
@@ -63,7 +71,6 @@ const ConfigManager: React.FC<ConfigManagerProps> = ({ language, isOpen, onClose
           alert(t.syncSuccess);
       } catch (e: any) {
           if (e.name !== 'AbortError') {
-             // Synchronous fallback triggering
              configImportRef.current?.click();
           }
       } finally {
@@ -77,7 +84,6 @@ const ConfigManager: React.FC<ConfigManagerProps> = ({ language, isOpen, onClose
         return;
     }
 
-    // Manual Download
     const data = configService.exportConfigData();
     const filename = configService.CONFIG_FILENAME;
 
@@ -140,6 +146,17 @@ const ConfigManager: React.FC<ConfigManagerProps> = ({ language, isOpen, onClose
       onUpdate?.();
     }
   };
+  
+  // Specific handler for General Template Update
+  const handleSaveGeneral = (newTemplate: AnalysisTemplate) => {
+      // Force ID to match general logic
+      const fixed = { ...newTemplate, id: GENERAL_TEMPLATE_ID };
+      configService.saveTemplate(fixed);
+      refreshData();
+      onUpdate?.();
+      // Stay on tab, just flash success maybe?
+      alert(t.save + ' ' + t.syncSuccess);
+  };
 
   const clearEdits = () => {
       setEditGroup(null);
@@ -147,6 +164,9 @@ const ConfigManager: React.FC<ConfigManagerProps> = ({ language, isOpen, onClose
   };
 
   if (!isOpen) return null;
+
+  // Filter out General Template from the "Templates" list to avoid duplication
+  const displayedTemplates = templates.filter(t => t.id !== GENERAL_TEMPLATE_ID);
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
@@ -202,8 +222,16 @@ const ConfigManager: React.FC<ConfigManagerProps> = ({ language, isOpen, onClose
                onClick={() => { setActiveTab('groups'); clearEdits(); }}
                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'groups' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'text-gray-600 hover:bg-gray-200'}`}
              >
-               <Briefcase className="w-4 h-4" /> {t.tabGroups}
+               <Layers className="w-4 h-4" /> {t.tabGroups}
              </button>
+             
+             <button
+               onClick={() => { setActiveTab('general'); clearEdits(); }}
+               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'general' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'text-gray-600 hover:bg-gray-200'}`}
+             >
+               <Star className="w-4 h-4" /> {t.tabGeneral}
+             </button>
+
              <button
                onClick={() => { setActiveTab('templates'); clearEdits(); }}
                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'templates' ? 'bg-blue-600 text-white shadow-md shadow-blue-200' : 'text-gray-600 hover:bg-gray-200'}`}
@@ -215,8 +243,8 @@ const ConfigManager: React.FC<ConfigManagerProps> = ({ language, isOpen, onClose
           {/* Main Content Area */}
           <div className="flex-1 flex flex-col overflow-hidden bg-white relative">
              
-             {/* List View Header */}
-             {(!editGroup && !editTemplate) && (
+             {/* List View Header (Only for Groups and Custom Templates) */}
+             {((activeTab === 'groups' && !editGroup) || (activeTab === 'templates' && !editTemplate)) && (
                  <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-white">
                     <h3 className="text-2xl font-bold text-gray-800">
                         {activeTab === 'groups' ? t.tabGroups : t.tabTemplates}
@@ -266,11 +294,39 @@ const ConfigManager: React.FC<ConfigManagerProps> = ({ language, isOpen, onClose
                     <ConfigGroupEditor group={editGroup} templates={templates} language={language} onSave={handleSaveGroup} onCancel={() => setEditGroup(null)} />
                 )}
 
-                {/* 2. TEMPLATES VIEW */}
+                {/* 2. GENERAL VIEW (Single Editor) */}
+                {activeTab === 'general' && (
+                    <div>
+                         <h3 className="text-2xl font-bold text-gray-800 mb-4">{t.defaultAnalysis}</h3>
+                         {generalTemplate ? (
+                             <ConfigTemplateEditor 
+                                template={generalTemplate} 
+                                language={language} 
+                                onSave={handleSaveGeneral} 
+                                onCancel={() => {/* General tab doesn't cancel back to list */}} 
+                             />
+                         ) : (
+                             <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50">
+                                <p className="text-gray-500 mb-4">Configuration missing for Default Analysis.</p>
+                                <button 
+                                    onClick={() => {
+                                        configService.ensureDefaults();
+                                        refreshData();
+                                    }}
+                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors shadow-sm"
+                                >
+                                    {t.create || 'Initialize Default'}
+                                </button>
+                             </div>
+                         )}
+                    </div>
+                )}
+
+                {/* 3. CUSTOM TEMPLATES VIEW */}
                 {activeTab === 'templates' && !editTemplate && (
                     <div className="grid grid-cols-1 gap-4">
-                        {templates.length === 0 && <p className="text-gray-400 italic text-center py-10">{t.noItems}</p>}
-                        {templates.map(tmpl => (
+                        {displayedTemplates.length === 0 && <p className="text-gray-400 italic text-center py-10">{t.noItems}</p>}
+                        {displayedTemplates.map(tmpl => (
                             <div key={tmpl.id} className="bg-white p-5 rounded-xl border border-gray-200 hover:border-purple-300 hover:shadow-md transition-all group">
                                 <div className="flex justify-between items-start mb-2">
                                     <div className="flex items-center gap-2">
